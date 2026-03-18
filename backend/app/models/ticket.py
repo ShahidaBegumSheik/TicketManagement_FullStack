@@ -1,0 +1,38 @@
+from sqlalchemy import Integer, DateTime, ForeignKey, Index, String, Enum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+import enum
+from datetime import datetime, timezone
+
+from app.core.database import Base
+
+class Priority(str, enum.Enum):
+    urgent = "urgent"
+    high = "high"
+    medium = "medium"
+    low = "low"
+
+class Status(str, enum.Enum):
+    open = "open"
+    closed = "closed"
+    cancelled = "cancelled"
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[Priority] = mapped_column(Enum(Priority), nullable=False)
+    status: Mapped[Status] = mapped_column(Enum(Status), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), 
+                                                 default=lambda: datetime.now(timezone.utc), 
+                                                 nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    user = relationship("User", back_populates="tickets")
+
+    __table_args__ = (
+        Index("ix_user_ticket_priority", "priority", "user_id"),
+        Index("ix_user_ticket_status", "status","user_id")
+    )
