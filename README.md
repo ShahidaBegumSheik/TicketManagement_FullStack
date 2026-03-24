@@ -1,7 +1,9 @@
 ﻿# Ticket Management Application - FullStack
 
-A full-stack Ticket Management System built with **FastAPI** for the backend and **React + Vite + Tailwind CSS** for the frontend.  
-The application supports **user registration and login**, **role-based access control**, **ticket creation and viewing for users**, and **ticket monitoring and management for admins**.
+A full-stack Ticket Management System built with **FastAPI** (backend)
+and **React + Vite + Tailwind CSS** (frontend).\
+Supports role-based access, ticket lifecycle, assignment, comments,
+filtering and statistics
 
 ---
 
@@ -31,20 +33,26 @@ The application supports **user registration and login**, **role-based access co
 
 ### User Features
 
-- Register account
-- Login with email and password
-- Create new ticket
-- View own tickets
-- View details of own tickets
+- Register & login
+- Create tickets
+- View own + assigned tickets
+- View ticket details
+- Add comments
 
 ### Admin Features
 
-- Login with role-based access
 - View all tickets
-- Update ticket status
-- Manage ticket priority
-- View all users
-- Click a user and view that user's tickets
+- Assign tickets to users
+- Update status & priority
+- View users and their tickets
+- Add comments
+
+## Shared Features
+
+- Ticket filtering (search, status, priority)
+- Ticket details view
+- Comments system
+- Reusable UI components
 
 ---
 
@@ -52,33 +60,53 @@ The application supports **user registration and login**, **role-based access co
 
 ### Authentication APIs
 
-- `POST /api/v1/auth/register`    Register a new user with name, email, and password.
+- `POST /api/v1/auth/register` Register a new user with name, email, and password.
 
-- `POST /api/v1/auth/login-json`    Login using email and password and receive JWT access token.
+- `POST /api/v1/auth/login-json` Login using email and password and receive JWT access token.
+
+- `GET /api/v1/auth/me` Get current logged-in user
 
 ---
 
 ### User Ticket APIs
 
-- `POST /api/v1/tickets`    Create a new ticket.
+- `POST /api/v1/tickets` Create a new ticket.
 
-- `GET /api/v1/tickets`     Get all tickets created by the logged-in user.
+- `GET /api/v1/tickets` Get all tickets created by the logged-in user.
 
-- `GET /api/v1/tickets/{ticket_id}`     Get full details of one ticket belonging to the logged-in user.
+- `GET /api/v1/tickets/{ticket_id}` Get full details of one ticket belonging to the logged-in user.
+
+- `GET /api/v1/tickets/my` Get created + assigned tickets
 
 ---
 
 ### Admin APIs
 
-- `GET /api/v1/admin/tickets`     Get all tickets in the system.
+- `GET /api/v1/admin/tickets` Get all tickets in the system.
 
-- `PATCH /api/v1/admin/tickets/{ticket_id}`     Update ticket status or priority.
+- `PATCH /api/v1/admin/tickets/{ticket_id}` Update ticket status, priority assign user.
 
-- `GET /api/v1/admin/users`     Get all registered users.
+- `GET /api/v1/admin/users` Get all registered users.
 
-- `GET /api/v1/admin/users/{user_id}/tickets`     Get all tickets created by a specific user.
+- `GET /api/v1/admin/users/{user_id}/tickets` Get all tickets of a specific user.
 
-- `GET /api/v1/admin/user-tickets`    Get user-ticket mapping for admin view.
+- `GET /api/v1/admin/user-tickets` Get user-ticket mapping for admin view.
+
+---
+
+### Admin Statistics API
+
+- `GET /api/v1/admin/dashboard-stats`
+
+  Returns summary statistics (total, open, in-progress, closed, cancelled, and pripority-wise distribution)
+
+---
+
+### Comments APIs
+
+- `GET /api/v1/tickets/{ticket_id}/comments` Get comments
+
+- `POST /api/v1/tickets/{ticket_id}/comments` Add comment
 
 ---
 
@@ -88,20 +116,28 @@ The application supports **user registration and login**, **role-based access co
 ticket_booking_app/
 ├── backend/
 │   ├── app/
-│   │   ├── core/
-│   │   ├── models/
-│   │   ├── routers/
-│   │   ├── schemas/
+│   │   ├── core/              # config, security
+│   │   ├── models/            # DB models
+│   │   ├── schemas/           # Pydantic schemas
+│   │   ├── routers/           # API routes
+│   │   │   ├── auth.py
+│   │   │   ├── user.py
+│   │   │   ├── admin.py
+│   │   │   ├── tickets.py
+│   │   │   ├── comments.py
 │   │   └── main.py
 │   └── requirements.txt
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── contexts/
+│   │   ├── api/               # axios calls
+│   │   ├── components/        # reusable components
+│   │   │   ├── TicketFilters.jsx
+│   │   │   ├── TicketTable.jsx
+│   │   │   ├── CommentsPanel.jsx
+│   │   ├── contexts/          # auth context
 │   │   ├── layouts/
-│   │   ├── pages/
+│   │   ├── pages/             # dashboards & auth pages
 │   │   ├── router/
 │   │   └── styles/
 │   └── package.json
@@ -115,24 +151,17 @@ ticket_booking_app/
 
 ---
 
-
 ## Database Setup (MySQL in Docker)
-
 
 This project uses **MySQL running inside a Docker container**.
 
-
 ### 1. Using Existing Container
-
 
 If MySQL container is already running, we can create a new database inside the same container.
 
-
 ### Create a New Database
 
-
 Run the following command:
-
 
 ```bash
 docker exec -it <container_name> mysql -u root -p
@@ -148,7 +177,6 @@ Run the SQL command to create the new db for ticket management
 The backend .env settings should point to the correct database
 
     DATABASE_URL=mysql+pymysql://username:password@localhost:3306/ticket_management_db
-
 
 ---
 

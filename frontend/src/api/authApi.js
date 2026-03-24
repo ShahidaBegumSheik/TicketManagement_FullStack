@@ -23,3 +23,15 @@ export async function getAllUsers(){
   return data
 
 }
+
+export async function updateProfile(payload) {
+  const { data } = await api.patch('/auth/me', payload);
+  return data;
+}
+
+export async function toggleUserStatus(userId, isActive) {
+  const { data } = await api.patch(`/admin/users/${userId}/status`, null, {
+    params: { is_active: isActive },
+  });
+  return data;
+}

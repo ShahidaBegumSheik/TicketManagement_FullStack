@@ -7,6 +7,8 @@ class AdminUserOut(BaseModel):
     name: str
     email: EmailStr
     role: str
+    is_active: bool
+    updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
 class AdminUserTicketsOut(BaseModel):
@@ -16,7 +18,9 @@ class AdminUserTicketsOut(BaseModel):
     priority: Priority
     status: Status
     user_id: int
+    assigned_user_id: int | None
     created_at: datetime
+    updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
 class UserTicketMapOut(BaseModel):
@@ -26,3 +30,13 @@ class UserTicketMapOut(BaseModel):
     ticket_status: Status
     ticket_desc: str
 
+class DashboardStatsOut(BaseModel):
+    total_tickets: int
+    open_tickets: int
+    in_progress_tickets: int
+    closed_tickets: int
+    cancelled_tickets: int
+    urgent_tickets: int
+    high_tickets: int
+    medium_tickets: int
+    low_tickets: int

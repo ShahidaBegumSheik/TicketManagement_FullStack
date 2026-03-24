@@ -19,11 +19,16 @@ class TicketUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1, max_length=255)
     priority: Priority | None = None
     status: Status | None = None
+    assigned_user_id: int | None = None
     
     model_config = ConfigDict(
-        json_schema_extra={"example": {"title": "ticket1", 
-                           "description": "ticket updated",
-                           "user_id": 1, "priority": "medium", "status": "cancelled"}}
+        json_schema_extra={"example": 
+                           {"title": "ticket1",
+                            "description": "ticket updated",
+                            "priority": "medium", "status": "cancelled",
+                            "assigned_user_id": 5,
+                            }
+        }
     )
 
 class TicketOut(BaseModel):
@@ -33,6 +38,8 @@ class TicketOut(BaseModel):
     priority: Priority
     status: Status
     user_id: int
+    assigned_user_id: int | None
     created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

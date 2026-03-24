@@ -64,9 +64,9 @@ export default function DashboardShell({ title, subtitle, menuItems, activeKey, 
         <main className="flex-1 overflow-hidden rounded-[2rem] bg-white p-4 shadow-soft md:p-6">
           <div className="mb-6 flex flex-col gap-4 rounded-[2rem] bg-gradient-to-r from-slate-950 via-brand-800 to-accent-700 p-5 text-white md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.25em] text-blue-100/70">Ticket dashboard</p>
-              <h2 className="mt-2 text-3xl font-semibold">{title}</h2>
-              <p className="mt-2 max-w-3xl text-sm text-blue-50/80">{subtitle}</p>
+              <p className="text-sm uppercase tracking-[0.25em] text-blue-100/70">
+              {user?.role === 'admin' ? 'Admin Workspace' : 'User Workspace'}
+              </p>
             </div>
             <div className="rounded-3xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-blue-50/90">
               Signed in as <span className="font-semibold">{user?.role}</span>

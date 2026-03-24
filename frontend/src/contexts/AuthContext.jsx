@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { getCurrentUser, loginUser, registerUser } from '../api/authApi';
+import { getCurrentUser, loginUser, registerUser, updateProfile } from '../api/authApi';
 
 const AuthContext = createContext(null);
 
@@ -53,13 +53,19 @@ export function AuthProvider({ children }) {
     return registerUser(payload);
   }
 
+  async function saveProfile(payload) {
+    const updated = await updateProfile(payload);
+    setUser(updated);
+    return updated;
+  }
+
   function logout() {
     localStorage.removeItem('ticket_access_token');
     setUser(null);
   }
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, register, setUser }),
+    () => ({ user, loading, login, logout, register, setUser, saveProfile }),
     [user, loading]
   );
 

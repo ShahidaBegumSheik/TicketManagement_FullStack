@@ -7,8 +7,8 @@ export async function createTicket(payload) {
 }
 
 
-export async function getMyTickets() {
-  const { data } = await api.get('/tickets');
+export async function getMyTickets(params = {}) {
+  const { data } = await api.get('/tickets', { params });
   return data;
 }
 
@@ -19,8 +19,8 @@ export async function getTicketById(ticketId) {
 }
 
 
-export async function getAllTickets() {
-  const { data } = await api.get('/admin/tickets');
+export async function getAllTickets(params = {}) {
+  const { data } = await api.get('/admin/tickets', { params });
   return data;
 }
 
@@ -30,7 +30,24 @@ export async function updateTicket(ticketId, payload) {
   return data;
 }
 
+
 export async function getTicketsByUser(userId) {
   const { data } = await api.get(`/admin/users/${userId}/tickets`);
+  return data;
+}
+
+export async function getTicketComments(ticketId) {
+  const { data } = await api.get(`/tickets/${ticketId}/comments`);
+  return data;
+}
+
+export async function addTicketComment(ticketId, payload) {
+  const { data } = await api.post(`/tickets/${ticketId}/comments`, payload);
+  return data;
+}
+
+
+export async function getDashboardStats() {
+  const { data } = await api.get('/admin/dashboard-stats');
   return data;
 }

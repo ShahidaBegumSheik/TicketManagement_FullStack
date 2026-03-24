@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.dependencies.auth import get_current_user
 from app.models.user import User, UserRole
-from app.schemas.auth import LoginIn, RegisterIn, RegisterOut, TokenOut, UserMeOut
+from app.schemas.auth import LoginIn, RegisterIn, RegisterOut, TokenOut, UserMeOut, ProfileUpdateIn
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -76,4 +76,22 @@ def login_json(payload: LoginIn, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserMeOut)
 def me(user=Depends(get_current_user)):
+    return user
+
+
+@router.patch("/me", response_model=UserMeOut)
+def update_profile(
+    payload: ProfileUpdateIn,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    normalized_email = payload.email.lower()
+    existing = db.query(User).filter(User.email == normalized_email, User.id != user.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already in use")
+
+    user.name = payload.name
+    user.email = normalized_email
+    db.commit()
+    db.refresh(user)
     return user

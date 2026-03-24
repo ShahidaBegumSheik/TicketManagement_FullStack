@@ -13,6 +13,7 @@ class Priority(str, enum.Enum):
 
 class Status(str, enum.Enum):
     open = "open"
+    in_progress = "in_progress"
     closed = "closed"
     cancelled = "cancelled"
 
@@ -28,11 +29,21 @@ class Ticket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), 
                                                  default=lambda: datetime.now(timezone.utc), 
                                                  nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    assigned_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
-    user = relationship("User", back_populates="tickets")
+    user = relationship("User", back_populates="tickets", foreign_keys=[user_id])
+    assigned_user = relationship("User", back_populates="assigned_tickets", foreign_keys=[assigned_user_id])
+    comments = relationship("Comment", back_populates="ticket", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_user_ticket_priority", "priority", "user_id"),
-        Index("ix_user_ticket_status", "status","user_id")
+        Index("ix_user_ticket_status", "status","user_id"),
+        Index("ix_ticket_assigned_user", "assigned_user_id")
     )
