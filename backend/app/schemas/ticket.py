@@ -39,6 +39,8 @@ class TicketOut(BaseModel):
     status: Status
     user_id: int
     assigned_user_id: int | None
+    user_name: str | None = None
+    assigned_user_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

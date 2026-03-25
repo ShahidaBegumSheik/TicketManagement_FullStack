@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
@@ -55,11 +55,31 @@ def list_tickets(db: Session = Depends(get_db),
 
 @router.get("/{ticket_id}", response_model=TicketOut)
 def get_ticket(ticket_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    ticket = db.get(Ticket, ticket_id)
+    stmt = (
+        select(Ticket)
+        .options(
+            joinedload(Ticket.user),
+            joinedload(Ticket.assigned_user),
+        )
+        .where(Ticket.id == ticket_id)
+    )
+    ticket = db.scalar(stmt)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     
-    if ticket.user_id != user.id and ticket.assigned_user_id != user.id:
+    if user.role != UserRole.admin and ticket.user_id != user.id and ticket.assigned_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not allowed to access this ticket")
     
-    return ticket
+    return TicketOut(
+        id=ticket.id,
+        title=ticket.title,
+        description=ticket.description,
+        priority=ticket.priority,
+        status=ticket.status,
+        user_id=ticket.user_id,
+        assigned_user_id=ticket.assigned_user_id,
+        user_name=ticket.user.name if ticket.user else None,
+        assigned_user_name=ticket.assigned_user.name if ticket.assigned_user else None,
+        created_at=ticket.created_at,
+        updated_at=ticket.updated_at,
+    )
