@@ -9,7 +9,7 @@ export default function CommentsPanel({
   title = 'Comments',
 }) {
   return (
-    <div className="mt-6 border-t border-slate-200 pt-5">
+    <div>
       <h4 className="text-lg font-semibold text-slate-900">{title}</h4>
 
       <div className="mt-3 max-h-64 space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">

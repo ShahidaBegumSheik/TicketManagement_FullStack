@@ -58,3 +58,4 @@ yarn-error.log*
 
 coverage/
 .cache/
+package-lock.json

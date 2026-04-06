@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   addTicketComment,
+  checkDuplicateTicket,
   createTicket,
   getMyTickets,
   getTicketById,
   getTicketComments,
+  reopenTicket,
+  updateTicket,
+  uploadTicketAttachments,
 } from '../api/ticketApi';
+import ActivityTimeline from '../components/ActivityTimeline';
+import AttachmentList from '../components/AttachmentList';
 import CommentsPanel from '../components/CommentsPanel';
+import EmptyState from '../components/EmptyState';
+import LoadingState from '../components/LoadingState';
 import ProfileForm from '../components/ProfileForm';
 import SectionHeader from '../components/SectionHeader';
 import TicketFilters from '../components/TicketFilters';
@@ -16,34 +24,24 @@ import DashboardShell from '../layouts/DashboardShell';
 
 const defaultFilters = { search: '', status: '', priority: '' };
 
-const userMenu = [
-  {
-    key: 'create-ticket',
-    label: 'Create Ticket',
-    description: 'Submit a new support issue with the required fields.',
-  },
-  {
-    key: 'view-my-tickets',
-    label: 'View My Tickets',
-    description: 'View your tickets.',
-  },
-  {
-    key: 'ticket-details',
-    label: 'Ticket Details Page',
-    description: 'Review complete details for a selected ticket.',
-  },
-  {
-    key: 'profile',
-    label: 'My Profile',
-    description: 'Update your basic account details.',
-  },
+const standardUserMenu = [
+  { key: 'create-ticket', label: 'Create Ticket', description: 'Submit a new support issue with attachments.' },
+  { key: 'view-my-tickets', label: 'View My Tickets', description: 'Search, filter, and page through tickets.' },
+  { key: 'ticket-details', label: 'Ticket Details', description: 'View comments, attachments, and activity.' },
+  { key: 'profile', label: 'My Profile', description: 'Update your basic account details.' },
+];
+
+const agentMenu = [
+  { key: 'view-my-tickets', label: 'Assigned Tickets', description: 'View the tickets assigned to you.' },
+  { key: 'ticket-details', label: 'Ticket Details', description: 'Update status and collaborate on tickets.' },
+  { key: 'profile', label: 'My Profile', description: 'Update your basic account details.' },
 ];
 
 export default function UserDashboard() {
   const { saveProfile, user } = useAuth();
   const [activeMenu, setActiveMenu] = useState('create-ticket');
   const [tickets, setTickets] = useState([]);
-  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [meta, setMeta] = useState(null);
   const [detailsTicket, setDetailsTicket] = useState(null);
   const [loadingTickets, setLoadingTickets] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -55,25 +53,40 @@ export default function UserDashboard() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [filters, setFilters] = useState(defaultFilters);
-  const [form, setForm] = useState({ title: '', description: '', priority: 'low' });
+  const [page, setPage] = useState(1);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  const [form, setForm] = useState({ title: '', description: '', priority: 'low', files: [] });
+  const isSupportAgent = user?.role === 'support_agent';
+  const userMenu = isSupportAgent ? agentMenu : standardUserMenu;
 
   const currentMenu = useMemo(
     () => userMenu.find((item) => item.key === activeMenu) || userMenu[0],
-    [activeMenu]
+    [activeMenu, userMenu]
   );
 
-  async function loadTickets(customFilters = filters) {
+  async function loadTickets(currentPage = page, customFilters = filters) {
     setLoadingTickets(true);
     setError('');
 
     try {
       const params = Object.fromEntries(Object.entries(customFilters).filter(([, value]) => value));
+      params.page = currentPage;
+      params.size = 10;
       const data = await getMyTickets(params);
-      setTickets(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length) {
-        setSelectedTicket(data[0]);
+      setTickets(Array.isArray(data?.items) ? data.items : []);
+      setMeta({
+        page: data?.page ?? currentPage,
+        total: data?.total ?? 0,
+        total_pages: data?.pages ?? 1,
+        limit: data?.size ?? 10,
+      });
+      if (Array.isArray(data?.items) && data.items.length) {
+        const existsInPage = detailsTicket && data.items.some((item) => item.id === detailsTicket.id);
+        if (!detailsTicket || !existsInPage) {
+          setDetailsTicket(data.items[0]);
+        }
       } else {
-        setSelectedTicket(null);
         setDetailsTicket(null);
       }
     } catch (err) {
@@ -84,7 +97,8 @@ export default function UserDashboard() {
   }
 
   function updateField(event) {
-    setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
+    const { name, value, files } = event.target;
+    setForm((prev) => ({ ...prev, [name]: files ? Array.from(files) : value }));
   }
 
   function updateFilter(key, value) {
@@ -92,12 +106,14 @@ export default function UserDashboard() {
   }
 
   async function applyFilters() {
-    await loadTickets(filters);
+    setPage(1);
+    await loadTickets(1, filters);
   }
 
   async function resetFilters() {
     setFilters(defaultFilters);
-    await loadTickets(defaultFilters);
+    setPage(1);
+    await loadTickets(1, defaultFilters);
   }
 
   async function handleCreateTicket(event) {
@@ -107,11 +123,22 @@ export default function UserDashboard() {
     setMessage('');
 
     try {
-      const created = await createTicket(form);
+      const duplicate = await checkDuplicateTicket({ title: form.title, description: form.description });
+      if (duplicate?.is_duplicate) {
+        setMessage(`${duplicate.message} You can still submit if it is a different issue.`);
+      }
+      const formData = new FormData();
+      formData.append('title', form.title);
+      formData.append('description', form.description);
+      formData.append('priority', form.priority);
+      (form.files || []).forEach((file) => {
+        formData.append('files', file)
+      });
+      const created = await createTicket(formData);
       setMessage('Ticket created successfully.');
-      setForm({ title: '', description: '', priority: 'low' });
-      setTickets((prev) => [created, ...prev]);
-      setSelectedTicket(created);
+      setForm({ title: '', description: '', priority: 'low' , files: []});
+      setDetailsTicket(created);
+      loadTickets(1, filters);
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to create ticket.');
     } finally {
@@ -120,7 +147,6 @@ export default function UserDashboard() {
   }
 
   async function handleSelectTicket(ticket) {
-    setSelectedTicket(ticket);
     setLoadingDetails(true);
     setError('');
     try {
@@ -154,6 +180,7 @@ export default function UserDashboard() {
       const created = await addTicketComment(detailsTicket.id, { content: commentText.trim() });
       setComments((prev) => [...prev, created]);
       setCommentText('');
+      await handleSelectTicket(detailsTicket);
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to add comment.');
     } finally {
@@ -161,15 +188,62 @@ export default function UserDashboard() {
     }
   }
 
+  async function handleUploadAttachments(event) {
+    const files = event.target.files;
+    if (!detailsTicket || !files?.length) return;
+    setUploadingFiles(true);
+    setError('');
+    try {
+      await uploadTicketAttachments(detailsTicket.id, files);
+      setMessage('Attachment uploaded successfully.');
+      await handleSelectTicket(detailsTicket);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to upload attachment.');
+    } finally {
+      setUploadingFiles(false);
+      event.target.value = '';
+    }
+  }
+
+  async function handleReopenTicket() {
+    if (!detailsTicket || !reopenReason.trim()) return;
+    try {
+      const updated = await reopenTicket(detailsTicket.id, { reason: reopenReason.trim() });
+      setMessage('Ticket reopened successfully.');
+      setReopenReason('');
+      setDetailsTicket(updated);
+      await handleSelectTicket(updated);
+      loadTickets(page, filters);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to reopen ticket.');
+    }
+  }
+
+  async function handleSupportStatusChange(status) {
+    if (!detailsTicket || !isSupportAgent) return;
+    try {
+      const updated = await updateTicket(detailsTicket.id, { status });
+      setDetailsTicket(updated);
+      setMessage('Ticket status updated successfully.');
+      await handleSelectTicket(updated);
+      loadTickets(page, filters);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to update ticket status.');
+    }
+  }
+
+  useEffect(() => {
+    if (isSupportAgent && activeMenu === 'create-ticket') {
+      setActiveMenu('view-my-tickets');
+    }
+  }, [isSupportAgent, activeMenu]);
+
+
   useEffect(() => {
     if (activeMenu === 'view-my-tickets' || activeMenu === 'ticket-details') {
-      loadTickets();
+      loadTickets(page, filters);
     }
-    if (activeMenu !== 'ticket-details') {
-      setDetailsTicket(null);
-    }
-    setMessage('');
-  }, [activeMenu]);
+  }, [activeMenu, page]);
 
   useEffect(() => {
     if (detailsTicket?.id) {
@@ -180,88 +254,70 @@ export default function UserDashboard() {
     }
   }, [detailsTicket]);
 
-  function renderContent() {
-    if (activeMenu === 'create-ticket') {
-      return (
-        <div className="card mx-auto max-w-3xl p-6">
-          <form onSubmit={handleCreateTicket} className="space-y-5">
-            <div>
-              <label className="label" htmlFor="title">Ticket title</label>
-              <input
-                id="title"
-                name="title"
-                className="input"
-                value={form.title}
-                onChange={updateField}
-                placeholder="Enter a short issue title"
-                required
-              />
-            </div>
 
-            <div>
-              <label className="label" htmlFor="description">Description</label>
-              <textarea
-                id="description"
-                name="description"
-                className="input min-h-36 resize-none"
-                value={form.description}
-                onChange={updateField}
-                placeholder="Describe the issue in detail"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="label" htmlFor="priority">Priority</label>
-              <select id="priority" name="priority" className="input" value={form.priority} onChange={updateField}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-
-            {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-            {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-
-            <button type="submit" className="btn-primary w-full" disabled={formLoading}>
-              {formLoading ? 'Submitting ticket...' : 'Submit Ticket'}
-            </button>
-          </form>
-        </div>
-      );
-    }
-
-    if (activeMenu === 'view-my-tickets') {
-      return (
-        <div>
-          <TicketFilters
-            filters={filters}
-            onChange={updateFilter}
-            onReset={resetFilters}
-            onApply={applyFilters}
-          />
-          {error && !tickets.length ? (
-            <div className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
-          ) : null}
-          <TicketTable
-            tickets={tickets}
-            loading={loadingTickets}
-            emptyText="No tickets found."
-            referenceUserId={user?.id}
-            showType={true}
-            showActions={false}
-          />
-        </div>
-      );
-    }
-
-    if (activeMenu === 'profile') {
-      return <ProfileForm user={user} onSave={saveProfile} />;
-    }
-
+  function renderCreate() {
     return (
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <div className="card mx-auto max-w-3xl p-6">
+        <form onSubmit={handleCreateTicket} className="space-y-5">
+          <div>
+            <label className="label" htmlFor="title">Ticket title</label>
+            <input id="title" name="title" className="input" value={form.title} onChange={updateField} placeholder="Enter a short issue title" required />
+          </div>
+          <div>
+            <label className="label" htmlFor="description">Description</label>
+            <textarea id="description" name="description" className="input min-h-36 resize-none" value={form.description} onChange={updateField} placeholder="Describe the issue in detail" required />
+          </div>
+          <div>
+            <label className="label" htmlFor="priority">Priority</label>
+            <select id="priority" name="priority" className="input" value={form.priority} onChange={updateField}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="files">Attachments</label>
+            <input id="files" name="files" type="file" className="input" multiple accept=".png,.jpg,.jpeg,.pdf" onChange={updateField} />
+            <p className="mt-2 text-xs text-slate-500">Images and PDFs only. Maximum 5 MB per file.</p>
+          </div>
+          {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+          {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+          <button type="submit" className="btn-primary w-full" disabled={formLoading}>
+            {formLoading ? 'Submitting ticket...' : 'Submit Ticket'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  function renderTicketList() {
+    return (
+      <div>
+        <TicketFilters filters={filters} onChange={updateFilter} onReset={resetFilters} onApply={applyFilters} />
+        {error ? (
+          <div className='mt-4 rounded-2xl border-rose-200 bg-rose-50 px-40 text-sm text-rose-700'>
+            {error}
+            </div>
+         ) : null }
+        <TicketTable
+          tickets={tickets}
+          loading={loadingTickets}
+          emptyText={isSupportAgent ? 'No assigned tickets found.' : 'No tickets found.'}
+          referenceUserId={user?.id}
+          showType={!isSupportAgent}
+          showActions={false}
+          onView={handleSelectTicket}
+          meta={meta}
+          onPageChange={(next) => setPage(next)}
+        />
+      </div>
+    );
+  }
+
+  function renderDetails() {
+    return (
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <div>
           <TicketFilters
             filters={filters}
@@ -269,81 +325,157 @@ export default function UserDashboard() {
             onReset={resetFilters}
             onApply={applyFilters}
           />
-          {error && !tickets.length ? (
-            <div className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
+
+          {error ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
           ) : null}
-          <TicketTable
-            tickets={tickets}
-            loading={loadingTickets}
-            emptyText="No tickets found."
-            referenceUserId={user?.id}
-            showType={true}
-            showActions={true}
-            onView={handleSelectTicket}
-          />
+
+          <div className="mt-4">
+            <TicketTable
+              tickets={tickets}
+              loading={loadingTickets}
+              emptyText={isSupportAgent ? 'No assigned tickets found.' : 'No tickets found.'}
+              referenceUserId={user?.id}
+              showType={!isSupportAgent}
+              showActions={false}
+              onView={handleSelectTicket}
+              meta={meta}
+              onPageChange={(next) => setPage(next)}
+            />
+          </div>
         </div>
 
-        <div className="card p-6">
-          <h3 className="text-xl font-semibold text-slate-900">Detailed view</h3>
+        <div className="space-y-6">
           {loadingDetails ? (
-            <p className="mt-4 text-sm text-slate-600">Loading ticket details...</p>
-          ) : detailsTicket ? (
-            <div className="mt-5 space-y-5">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-sm font-medium text-slate-500">Title</p>
-                <p className="mt-1 text-base font-semibold text-slate-900">{detailsTicket.title}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-sm font-medium text-slate-500">Description</p>
-                <p className="mt-1 text-sm leading-6 text-slate-700">{detailsTicket.description}</p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-500">Status</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{detailsTicket.status}</p>
+            <LoadingState text="Loading ticket details..." />
+          ) : !detailsTicket ? (
+            <EmptyState text="Select a ticket from the list to view its details." />
+          ) : (
+            <>
+              <div className="card p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900">{detailsTicket.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600">{detailsTicket.description}</p>
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    <div>
+                      Status: <span className="font-semibold text-slate-900">{detailsTicket.status}</span>
+                    </div>
+                    <div>
+                      Priority: <span className="font-semibold text-slate-900">{detailsTicket.priority}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-500">Priority</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{detailsTicket.priority}</p>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl bg-slate-50 p-4">
+                    <p className="text-sm font-medium text-slate-500">Created By</p>
+                    <p className="mt-1 text-base text-slate-900">{detailsTicket.creator_name || '—'}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 p-4">
+                    <p className="text-sm font-medium text-slate-500">Assigned To</p>
+                    <p className="mt-1 text-base text-slate-900">
+                      {detailsTicket.assigned_user_name || 'Unassigned'}
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-500">Created by</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{detailsTicket.user_name || 'Unknown'}</p>
+
+                {message ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {message}
+                  </div>
+                ) : null}
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <label className="btn-secondary cursor-pointer">
+                    {uploadingFiles ? 'Uploading...' : 'Upload attachments'}
+                    <input
+                      type="file"
+                      className="hidden"
+                      multiple
+                      accept=".png,.jpg,.jpeg,.pdf"
+                      onChange={handleUploadAttachments}
+                    />
+                  </label>
+
+                  {isSupportAgent ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleSupportStatusChange('in_progress')}
+                      >
+                        Mark In Progress
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleSupportStatusChange('closed')}
+                      >
+                        Mark Closed
+                      </button>
+                    </>
+                  ) : null}
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-500">Assigned user</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{detailsTicket.assigned_user_name || 'Not assigned'}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-500">Created at</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">
-                    {detailsTicket.created_at ? new Date(detailsTicket.created_at).toLocaleString() : '—'}
-                  </p>
-                </div>
+
+                {!isSupportAgent && detailsTicket.status === 'closed' ? (
+                  <div className="mt-6 rounded-2xl border border-slate-200 p-4">
+                    <label className="label" htmlFor="reopenReason">Reopen reason</label>
+                    <textarea
+                      id="reopenReason"
+                      className="input min-h-24 resize-none"
+                      value={reopenReason}
+                      onChange={(event) => setReopenReason(event.target.value)}
+                      placeholder="Why should this ticket be reopened?"
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary mt-3"
+                      onClick={handleReopenTicket}
+                      disabled={!reopenReason.trim()}
+                    >
+                      Reopen Ticket
+                    </button>
+                  </div>
+                ) : null}
+
+                <CommentsPanel
+                  comments={comments}
+                  commentText={commentText}
+                  onCommentChange={(event) => setCommentText(event.target.value)}
+                  onAddComment={handleAddComment}
+                  loadingComments={loadingComments}
+                  commentSaving={commentSaving}
+                  textareaId="ticketComment"
+                  title="Discussion"
+                />
               </div>
 
-              <CommentsPanel
-                comments={comments}
-                commentText={commentText}
-                onCommentChange={(event) => setCommentText(event.target.value)}
-                onAddComment={handleAddComment}
-                loadingComments={loadingComments}
-                commentSaving={commentSaving}
-                textareaId="userComment"
-              />
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-600">Select a ticket from the list to view its details.</p>
+              <AttachmentList ticketId={detailsTicket.id} attachments={detailsTicket.attachments || []} />
+              <ActivityTimeline items={detailsTicket.activities || []} />
+            </>
           )}
         </div>
       </div>
     );
   }
 
+
+  function renderContent() {
+    if (activeMenu === 'create-ticket' && !isSupportAgent) return renderCreate();
+    if (activeMenu === 'view-my-tickets') return renderTicketList();
+    if (activeMenu === 'ticket-details') return renderDetails();
+    if (activeMenu === 'profile') return <ProfileForm user={user} onSave={saveProfile} />;
+    return renderTicketList();
+  }
+
   return (
     <DashboardShell
-      title="User Dashboard"
-      subtitle="Create tickets, track your requests, and view assigned tickets."
+      title={isSupportAgent ? 'Support Agent Dashboard' : 'User Dashboard'}
+      subtitle={isSupportAgent ? 'Handle your assigned tickets with comments and live notifications.' : 'Create tickets, track updates, and reopen closed issues.'}
       menuItems={userMenu}
       activeKey={activeMenu}
       onMenuChange={setActiveMenu}

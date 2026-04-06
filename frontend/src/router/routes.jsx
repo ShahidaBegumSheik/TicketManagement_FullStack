@@ -37,7 +37,7 @@ export const appRoutes = [
   {
     path: '/user',
     element: (
-      <PrivateRoute allowedRoles={['user']}>
+      <PrivateRoute allowedRoles={['user', 'support_agent']}>
         <UserDashboard />
       </PrivateRoute>
     ),

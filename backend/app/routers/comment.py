@@ -4,28 +4,22 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
-from app.dependencies.roles import require_admin
 from app.models.ticket import Ticket
-from app.models.user import UserRole
 from app.models.comment import Comment
 from app.schemas.comment import CommentCreate, CommentOut
+from app.services.ticketing import create_ticket_activity, validate_ticket_access
+from app.services.notification_service import create_and_send_notification
 
-router = APIRouter(prefix="/tickets", tags=["comments"])
+router = APIRouter(prefix="/tickets", tags=["Comments"])
 
 @router.post("/{ticket_id}/comments", response_model=CommentOut)
-def add_comment(ticket_id: int, payload: CommentCreate, 
+async def add_comment(ticket_id: int, payload: CommentCreate, 
                 db: Session = Depends(get_db), user=Depends(get_current_user)):
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    
-    allowed = (
-        user.role == UserRole.admin or ticket.user_id == user.id or ticket.assigned_user_id == user.id
-    )
-
-    if not allowed:
+    if not validate_ticket_access(ticket, user):
         raise HTTPException(status_code=403, detail="Not allowed to comment on this ticket")
-    
     comment = Comment(
         content=payload.content,
         ticket_id=ticket_id,
@@ -33,6 +27,10 @@ def add_comment(ticket_id: int, payload: CommentCreate,
     )
 
     db.add(comment)
+    db.flush()
+    create_ticket_activity(db, ticket_id, user.id, "comment_added", f"Comment added by {user.name}.")
+    if ticket.user_id != user.id:
+        await create_and_send_notification(db, user_id=ticket.user_id, title="New ticket comment", message=f"{user.name} commented on ticket #{ticket.id}.", ticket_id=ticket.id)
     db.commit()
     db.refresh(comment)
 
@@ -50,14 +48,8 @@ def get_comments(ticket_id: int, db: Session = Depends(get_db), user=Depends(get
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    
-    allowed = (
-        user.role == UserRole.admin or ticket.user_id == user.id or ticket.assigned_user_id == user.id
-    )
-
-    if not allowed:
+    if not validate_ticket_access(ticket, user):
         raise HTTPException(status_code=403, detail="Not allowed to comment on this ticket")
-    
     stmt = (
         select(Comment).options(joinedload(Comment.user))
         .where(Comment.ticket_id == ticket_id)

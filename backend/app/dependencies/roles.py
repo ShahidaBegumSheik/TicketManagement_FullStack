@@ -14,3 +14,7 @@ def require_end_user(user=Depends(get_current_user)):
                             detail="Only users can perform this action")
     return user
 
+def require_support_agent(user=Depends(get_current_user)):
+    if user.role != UserRole.support_agent:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Support agent only")
+    return user

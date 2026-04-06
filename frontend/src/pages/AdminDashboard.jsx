@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getAllUsers, toggleUserStatus } from '../api/authApi';
+import { Chart as ChartJS, ArcElement, BarElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip } from 'chart.js';
+import { getAllUsers, toggleUserStatus, updateUserRole } from '../api/authApi';
 import {
   addTicketComment,
   getAllTickets,
-  getDashboardStats,
+  getDashboardAnalytics,
   getTicketComments,
-  getTicketsByUser,
+  getTicketById,
   updateTicket,
+  exportTicketsCsv,
 } from '../api/ticketApi';
+import ActivityTimeline from '../components/ActivityTimeline';
+import AttachmentList from '../components/AttachmentList';
+import ChartCard from '../components/ChartCard';
 import CommentsPanel from '../components/CommentsPanel';
+import EmptyState from '../components/EmptyState';
 import ProfileForm from '../components/ProfileForm';
 import SectionHeader from '../components/SectionHeader';
 import StatsCard from '../components/StatsCard';
@@ -16,6 +22,8 @@ import TicketFilters from '../components/TicketFilters';
 import TicketTable from '../components/TicketTable';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardShell from '../layouts/DashboardShell';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
 
 const defaultFilters = { search: '', status: '', priority: '' };
 
@@ -47,9 +55,78 @@ const adminMenu = [
   },
 ];
 
+function chartData(points, label, type = 'bar') {
+  const labels = points.map((item) => item.label);
+  const values = points.map((item) => item.value);
+
+  const palette = [
+  '#a5b4fc', // light indigo
+  '#c4b5fd', // light violet
+  '#67e8f9', // light cyan
+  '#6ee7b7', // light emerald
+  '#fde68a', // light amber
+  '#fca5a5', // light red
+  '#f9a8d4', // light pink
+  '#93c5fd', // light blue
+];
+
+
+
+  if (type === 'line') {
+    return {
+      labels,
+      datasets: [
+        {
+          label,
+          data: values,
+          borderColor: '#4f46e5',
+          backgroundColor: 'rgba(79, 70, 229, 0.18)',
+          pointBackgroundColor: '#7c3aed',
+          pointBorderColor: '#ffffff',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          fill: true,
+          tension: 0.35,
+        },
+      ],
+    };
+  }
+
+  if (type === 'pie' || type === 'doughnut') {
+    return {
+      labels,
+      datasets: [
+        {
+          label,
+          data: values,
+          backgroundColor: palette.slice(0, values.length),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+      ],
+    };
+  }
+
+  return {
+    labels,
+    datasets: [
+      {
+        label,
+        data: values,
+        backgroundColor: palette.slice(0, values.length),
+        borderColor: palette.slice(0, values.length),
+        borderWidth: 1,
+        borderRadius: 10,
+      },
+    ],
+  };
+}
+
+
 export default function AdminDashboard() {
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [tickets, setTickets] = useState([]);
+  const [meta, setMeta] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -59,14 +136,13 @@ export default function AdminDashboard() {
   const [assignedUserId, setAssignedUserId] = useState('');
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState([]);
-  const [userTickets, setUserTickets] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentSaving, setCommentSaving] = useState(false);
-  const [stats, setStats] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [filters, setFilters] = useState(defaultFilters);
+  const [page, setPage] = useState(1);
   const { saveProfile, user } = useAuth();
 
   const currentMenu = useMemo(
@@ -75,24 +151,29 @@ export default function AdminDashboard() {
   );
 
   const assignableUsers = useMemo(
-    () => users.filter((item) => item.role === 'user' && item.is_active),
+    () => users.filter((item) => item.role === 'support_agent' && item.is_active),
     [users]
   );
 
-  async function loadTickets(customFilters = filters) {
+  async function loadTickets(currentPage = page, customFilters = filters) {
     setLoading(true);
     setError('');
 
     try {
       const params = Object.fromEntries(Object.entries(customFilters).filter(([, value]) => value));
+      params.page = currentPage;
+      params.size = 10;
       const data = await getAllTickets(params);
-      setTickets(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length) {
-        const first = data[0];
-        setSelectedTicket(first);
-        setStatusValue(first.status || 'open');
-        setPriorityValue(first.priority || 'low');
-        setAssignedUserId(first.assigned_user_id ? String(first.assigned_user_id) : '');
+      const ticketItems = Array.isArray(data?.items) ? data.items : [];
+      setTickets(ticketItems);
+      setMeta({
+        page: data?.page ?? currentPage,
+        total: data?.total ?? 0,
+        total_pages: data?.pages ?? 1,
+        limit: data?.size ?? 10,
+      });
+      if (ticketItems.length) {
+        await handleSelectTicket(data.items[0], false);
       } else {
         setSelectedTicket(null);
       }
@@ -107,26 +188,17 @@ export default function AdminDashboard() {
     try {
       const data = await getAllUsers();
       setUsers(Array.isArray(data) ? data : []);
-    } catch (err) {
+    } catch {
       setError('Failed to load users');
     }
   }
 
-  async function loadUserTickets(userId) {
+  async function loadAnalytics() {
     try {
-      const data = await getTicketsByUser(userId);
-      setUserTickets(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError('Failed to load user tickets');
-    }
-  }
-
-  async function loadStats() {
-    try {
-      const data = await getDashboardStats();
-      setStats(data);
-    } catch (err) {
-      setError('Failed to load dashboard statistics.');
+      const data = await getDashboardAnalytics();
+      setAnalytics(data);
+    } catch {
+      setError('Failed to load dashboard analytics.');
     }
   }
 
@@ -142,6 +214,22 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleSelectTicket(ticket, loadCommentList = true) {
+    try {
+      const data = await getTicketById(ticket.id);
+      setSelectedTicket(data);
+      setStatusValue(data.status || 'open');
+      setPriorityValue(data.priority || 'low');
+      setAssignedUserId(data.assigned_user_id ? String(data.assigned_user_id) : '');
+      if (loadCommentList) {
+        loadComments(data.id);
+      }
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to load ticket details.');
+      setSelectedTicket(ticket);
+    }
+  }
+
   async function handleAddComment() {
     if (!selectedTicket || !commentText.trim()) return;
 
@@ -153,6 +241,7 @@ export default function AdminDashboard() {
       });
       setComments((prev) => [...prev, created]);
       setCommentText('');
+      await handleSelectTicket(selectedTicket, false);
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to add comment.');
     } finally {
@@ -162,11 +251,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (activeMenu === 'dashboard') {
-      loadStats();
+      loadAnalytics();
       loadUsers();
     }
     if (activeMenu === 'view-all' || activeMenu === 'manage-tickets') {
-      loadTickets();
+      loadTickets(page, filters);
       loadUsers();
     }
     if (activeMenu === 'view-users') {
@@ -174,37 +263,27 @@ export default function AdminDashboard() {
     }
     setMessage('');
     setError('');
-  }, [activeMenu]);
+  }, [activeMenu, page]);
 
   useEffect(() => {
-    setMessage('');
-    if (selectedTicket) {
-      setStatusValue(selectedTicket.status || 'open');
-      setPriorityValue(selectedTicket.priority || 'low');
-      setAssignedUserId(selectedTicket.assigned_user_id ? String(selectedTicket.assigned_user_id) : '');
-    }
-  }, [activeMenu, selectedTicket]);
-
-  useEffect(() => {
-    if (activeMenu === 'manage-tickets' && selectedTicket?.id) {
+    if (selectedTicket?.id && activeMenu === 'manage-tickets') {
       loadComments(selectedTicket.id);
-    } else {
-      setComments([]);
-      setCommentText('');
-    }
-  }, [activeMenu, selectedTicket]);
+    } 
+  }, [selectedTicket, activeMenu]);
 
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
   async function applyFilters() {
-    await loadTickets(filters);
+    setPage(1);
+    await loadTickets(1, filters);
   }
 
   async function resetFilters() {
     setFilters(defaultFilters);
-    await loadTickets(defaultFilters);
+    setPage(1);
+    await loadTickets(1, defaultFilters);
   }
 
   async function handleTicketUpdate(event) {
@@ -220,17 +299,12 @@ export default function AdminDashboard() {
         status: statusValue,
         priority: priorityValue,
       };
-      if (assignedUserId) {
-        payload.assigned_user_id = Number(assignedUserId);
-      }
+      payload.assigned_user_id = assignedUserId ? Number(assignedUserId) : 0;
       const updated = await updateTicket(selectedTicket.id, payload);
       setMessage('Ticket updated successfully.');
-      setTickets((prev) => prev.map((ticket) => (ticket.id === updated.id ? updated : ticket)));
-      setSelectedTicket(updated);
-      setStatusValue(updated.status || 'open');
-      setPriorityValue(updated.priority || 'low');
-      setAssignedUserId(updated.assigned_user_id ? String(updated.assigned_user_id) : '');
-      loadStats();
+      await handleSelectTicket(updated);
+      await loadTickets(page, filters);
+      await loadAnalytics();
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to update ticket.');
     } finally {
@@ -250,6 +324,58 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleUserRoleChange(targetUser, newRole) {
+    setError('');
+    setMessage('');
+
+    try {
+      await updateUserRole(targetUser.id, newRole);
+      await loadUsers();
+      setMessage(`Role updated to ${newRole}.`);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to update user role.');
+    }
+  }
+
+  async function handleExportCsv() {
+    try {
+      const blob = await exportTicketsCsv();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tickets.csv';
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError('Failed to export CSV.');
+    }
+  }
+
+  function renderDashboard() {
+    const summary = analytics?.summary;
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-end">
+          <button type="button" className="btn-secondary" onClick={handleExportCsv}>
+            Export CSV
+          </button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatsCard label="Total tickets" value={summary?.total_tickets ?? 0} />
+          <StatsCard label="Open tickets" value={summary?.open_tickets ?? 0} />
+          <StatsCard label="Closed tickets" value={summary?.closed_tickets ?? 0} />
+          <StatsCard label="Avg. resolution (hrs)" value={analytics?.average_resolution_hours ?? 0} />
+        </div>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <ChartCard title="Tickets created per day" description="Line chart powered by Chart.js." type="line" data={chartData(analytics?.tickets_per_day || [], 'Tickets')} />
+          <ChartCard title="Status distribution" description="Open vs closed backlog view." type="pie" data={chartData(analytics?.status_distribution || [], 'Tickets')} />
+          <ChartCard title="Priority distribution" description="Urgency mix across the queue." type="doughnut" data={chartData(analytics?.priority_distribution || [], 'Tickets')} />
+          <ChartCard title="Most active users" description="Top ticket creators." type="bar" data={chartData(analytics?.most_active_users || [], 'Tickets')} />
+        </div>
+      </div>
+    );
+  }
+
   function renderUserList() {
     if (!users.length) {
       return <p className="text-sm text-slate-500">No users found.</p>;
@@ -267,24 +393,27 @@ export default function AdminDashboard() {
                   {entry.role} • {entry.is_active ? 'Active' : 'Inactive'}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedUser(entry);
-                    loadUserTickets(entry.id);
-                    setActiveMenu('user-tickets');
-                  }}
-                  className="btn-secondary"
+
+              <div className="flex flex-col gap-3 md:min-w-[240px]">
+                <select
+                  value={entry.role}
+                  onChange={(event) => handleUserRoleChange(entry, event.target.value)}
+                  className="input"
+                  disabled={entry.role === "admin"}
                 >
-                  View tickets
-                </button>
+                  {entry.role === "admin" ? (
+                    <option value= "admin">Admin</option>
+                  ) : (
+                    <>
+                      <option value="user">User</option>
+                      <option value="support_agent">Support Agent</option>
+                    </>
+                  )}
+                </select>
                 <button
-                  type="button"
-                  onClick={() => handleUserToggle(entry)}
-                  className="btn-primary"
-                >
-                  {entry.is_active ? 'Deactivate' : 'Activate'}
+                    type="button"
+                    onClick={() => handleUserToggle(entry)} className="btn-primary">
+                    {entry.is_active ? 'Deactivate' : 'Activate'}
                 </button>
               </div>
             </div>
@@ -294,66 +423,76 @@ export default function AdminDashboard() {
     );
   }
 
-  function renderUserTickets() {
-    if (!selectedUser) {
-      return <p>No user selected</p>;
-    }
-
-    const createdCount = userTickets.filter((ticket) => ticket.user_id === selectedUser.id).length;
-    const assignedCount = userTickets.filter((ticket) => ticket.assigned_user_id === selectedUser.id).length;
-
-    let subtitle = 'No tickets available';
-    if (createdCount && assignedCount) {
-      subtitle = `Tickets related to ${selectedUser.name}`;
-    } else if (createdCount) {
-      subtitle = `Tickets created by ${selectedUser.name}`;
-    } else if (assignedCount) {
-      subtitle = `Tickets assigned to ${selectedUser.name}`;
-    }
-
+  function renderManageTickets() {
     return (
-      <div>
-        <SectionHeader
-          title={`Tickets for ${selectedUser.name}`}
-          description={subtitle}
-        />
-
-        <TicketTable
-          tickets={userTickets}
-          loading={false}
-          emptyText="No tickets found"
-          referenceUserId={selectedUser.id}
-          showType={true}
-          showActions={false}
-        />
-
-        <button onClick={() => setActiveMenu('view-users')} className="btn-secondary mt-4">
-          Back to Users
-        </button>
-      </div>
-    );
-  }
-
-  function renderDashboard() {
-    return (
-      <div className="space-y-8">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <StatsCard label="Total tickets" value={stats?.total_tickets ?? 0} />
-          <StatsCard label="Open tickets" value={stats?.open_tickets ?? 0} />
-          <StatsCard label="In progress tickets" value={stats?.in_progress_tickets ?? 0} />
-          <StatsCard label="Closed tickets" value={stats?.closed_tickets ?? 0} />
-          <StatsCard label="Cancelled tickets" value={stats?.cancelled_tickets ?? 0} />
-          <StatsCard label="Active users" value={users.filter((entry) => entry.is_active).length} />
-        </div>
-
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div>
-          <SectionHeader title="Priority distribution" description="Quick view of backlog urgency." />
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatsCard label="Urgent" value={stats?.urgent_tickets ?? 0} />
-            <StatsCard label="High" value={stats?.high_tickets ?? 0} />
-            <StatsCard label="Medium" value={stats?.medium_tickets ?? 0} />
-            <StatsCard label="Low" value={stats?.low_tickets ?? 0} />
+          <TicketFilters filters={filters} onChange={updateFilter} onReset={resetFilters} onApply={applyFilters} />
+          <TicketTable tickets={tickets} loading={loading} emptyText="No tickets found." showActions={false} onView={handleSelectTicket} meta={meta} onPageChange={(next) => setPage(next)} />
+        </div>
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h3 className="text-xl font-semibold text-slate-900">Selected ticket</h3>
+            {selectedTicket ? (
+              <form onSubmit={handleTicketUpdate} className="mt-5 space-y-5">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="font-semibold text-slate-900">{selectedTicket.title}</p>
+                  <p className="mt-2 text-sm text-slate-600">{selectedTicket.description}</p>
+                </div>
+                <div>
+                  <label className="label" htmlFor="ticketStatus">Status</label>
+                  <select id="ticketStatus" value={statusValue} onChange={(event) => setStatusValue(event.target.value)} className="input">
+                    <option value="open">Open</option>
+                    <option value="in_progress">In progress</option>
+                    <option value="closed">Closed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label" htmlFor="ticketPriority">Priority</label>
+                  <select id="ticketPriority" value={priorityValue} onChange={(event) => setPriorityValue(event.target.value)} className="input">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label" htmlFor="ticketAssign">Assign user/support agent</label>
+                  <select id="ticketAssign" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)} className="input">
+                    <option value="">Unassigned</option>
+                    {assignableUsers.map((entry) => (
+                      <option key={entry.id} value={entry.id}>{entry.name} ({entry.role})</option>
+                    ))}
+                  </select>
+                </div>
+                {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+                {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+                <button type="submit" className="btn-primary w-full" disabled={saving}>{saving ? 'Updating ticket...' : 'Save changes'}</button>
+              </form>
+            ) : (
+              <p className="mt-4 text-sm text-slate-600">Select a ticket from the list first.</p>
+            )}
           </div>
+
+          {selectedTicket ? (
+            <>
+              <div className="card p-6">
+                <CommentsPanel
+                  comments={comments}
+                  commentText={commentText}
+                  onCommentChange={(event) => setCommentText(event.target.value)}
+                  onAddComment={handleAddComment}
+                  loadingComments={loadingComments}
+                  commentSaving={commentSaving}
+                  textareaId="adminComment"
+                />
+              </div>
+
+              <AttachmentList ticketId={selectedTicket.id} attachments={selectedTicket.attachments || []} />
+              <ActivityTimeline items={selectedTicket.activities || []} />
+            </>
+          ) : null}
         </div>
       </div>
     );
@@ -373,131 +512,26 @@ export default function AdminDashboard() {
             onReset={resetFilters}
             onApply={applyFilters}
           />
-          <TicketTable tickets={tickets} loading={loading} emptyText="No tickets found." showType={false} />
+          <TicketTable tickets={tickets} loading={loading} emptyText="No tickets found." meta={meta} onPageChange={(next) => setPage(next)} />
         </div>
       );
     }
 
-    if (activeMenu === 'manage-tickets') {
-      return (
-        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <div>
-            <TicketFilters
-              filters={filters}
-              onChange={updateFilter}
-              onReset={resetFilters}
-              onApply={applyFilters}
-            />
-            <TicketTable
-              tickets={tickets}
-              loading={loading}
-              emptyText="No tickets found."
-              showType={false}
-              showActions={true}
-              onView={setSelectedTicket}
-            />
-          </div>
-
-          <div className="card p-6">
-            <h3 className="text-xl font-semibold text-slate-900">Selected ticket</h3>
-            {selectedTicket ? (
-              <form onSubmit={handleTicketUpdate} className="mt-5 space-y-5">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="font-semibold text-slate-900">{selectedTicket.title}</p>
-                  <p className="mt-2 text-sm text-slate-600">{selectedTicket.description}</p>
-                </div>
-                <div>
-                  <label className="label" htmlFor="ticketStatus">Status</label>
-                  <select
-                    id="ticketStatus"
-                    value={statusValue}
-                    onChange={(event) => setStatusValue(event.target.value)}
-                    className="input"
-                  >
-                    <option value="open">Open</option>
-                    <option value="in_progress">In progress</option>
-                    <option value="closed">Closed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label" htmlFor="ticketPriority">Priority</label>
-                  <select
-                    id="ticketPriority"
-                    value={priorityValue}
-                    onChange={(event) => setPriorityValue(event.target.value)}
-                    className="input"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label" htmlFor="ticketAssign">Assign user</label>
-                  <select
-                    id="ticketAssign"
-                    value={assignedUserId}
-                    onChange={(event) => setAssignedUserId(event.target.value)}
-                    className="input"
-                  >
-                    <option value="">Unassigned</option>
-                    {assignableUsers.map((entry) => (
-                      <option key={entry.id} value={entry.id}>{entry.name} ({entry.email})</option>
-                    ))}
-                  </select>
-                </div>
-                {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-                {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-                <button type="submit" className="btn-primary w-full" disabled={saving}>
-                  {saving ? 'Updating ticket...' : 'Save changes'}
-                </button>
-
-                <CommentsPanel
-                  comments={comments}
-                  commentText={commentText}
-                  onCommentChange={(event) => setCommentText(event.target.value)}
-                  onAddComment={handleAddComment}
-                  loadingComments={loadingComments}
-                  commentSaving={commentSaving}
-                  textareaId="adminComment"
-                />
-              </form>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">Select a ticket from the list first.</p>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    if (activeMenu === 'view-users') {
-      return renderUserList();
-    }
-
-    if (activeMenu === 'user-tickets') {
-      return renderUserTickets();
-    }
-
-    if (activeMenu === 'profile') {
-      return <ProfileForm user={user} onSave={saveProfile} />;
-    }
-
+    if (activeMenu === 'manage-tickets') return renderManageTickets();
+    if (activeMenu === 'view-users') return renderUserList();
+    if (activeMenu === 'profile') return <ProfileForm user={user} onSave={saveProfile} />;
     return null;
   }
 
   return (
     <DashboardShell
       title="Ticket Management Dashboard"
-      subtitle="Manage tickets, assign users, and control workflow status."
+      subtitle="Manage tickets, assign users, track analytics, and receive live updates."
       menuItems={adminMenu}
       activeKey={activeMenu}
       onMenuChange={setActiveMenu}
     >
       <SectionHeader title={currentMenu.label} description={currentMenu.description} />
-      {message ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-      {error && activeMenu !== 'manage-tickets' ? <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
       {renderContent()}
     </DashboardShell>
   );

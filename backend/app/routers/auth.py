@@ -1,8 +1,10 @@
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -12,7 +14,7 @@ from app.models.user import User, UserRole
 from app.schemas.auth import LoginIn, RegisterIn, RegisterOut, TokenOut, UserMeOut, ProfileUpdateIn
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-
+limiter = Limiter(key_func=get_remote_address)
 
 def _issue_tokens(user: User) -> TokenOut:
     access = create_access_token(subject=str(user.id), extra={"role": user.role.value})
@@ -30,7 +32,7 @@ def _authenticate(email: str, password: str, db: Session):
 
 
 @router.post("/register", response_model=RegisterOut)
-def register(payload: RegisterIn, db: Session = Depends(get_db)):
+def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):
     normalized_email = payload.email.lower()
     existing = db.query(User).filter(User.email == normalized_email).first()
     if existing:
@@ -61,15 +63,17 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenOut)
+@limiter.limit(settings.rate_limit_login)
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
     user = _authenticate(form_data.username, form_data.password, db)
     return _issue_tokens(user)
 
 
 @router.post("/login-json", response_model=TokenOut)
-def login_json(payload: LoginIn, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_login)
+def login_json(request: Request, payload: LoginIn, db: Session = Depends(get_db)):
     user = _authenticate(payload.email, payload.password, db)
     return _issue_tokens(user)
 

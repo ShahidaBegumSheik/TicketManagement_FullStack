@@ -35,3 +35,10 @@ export async function toggleUserStatus(userId, isActive) {
   });
   return data;
 }
+
+export async function updateUserRole(userId, role) {
+  const { data } = await api.put(`/admin/users/${userId}/role`, null, {
+    params: { role },
+  });
+  return data;
+}

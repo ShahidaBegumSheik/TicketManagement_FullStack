@@ -40,3 +40,15 @@ class DashboardStatsOut(BaseModel):
     high_tickets: int
     medium_tickets: int
     low_tickets: int
+
+class ChartPoint(BaseModel):
+    label: str
+    value: float
+
+class DashboardAnalyticsOut(BaseModel):
+    summary: DashboardStatsOut
+    tickets_per_day: list[ChartPoint]
+    status_distribution: list[ChartPoint]
+    priority_distribution: list[ChartPoint]
+    average_resolution_hours: float
+    most_active_users: list[ChartPoint]

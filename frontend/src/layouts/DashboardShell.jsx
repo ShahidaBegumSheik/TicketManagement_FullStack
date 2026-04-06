@@ -1,3 +1,4 @@
+import NotificationBell from '../components/NotificationBell';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -68,8 +69,11 @@ export default function DashboardShell({ title, subtitle, menuItems, activeKey, 
               {user?.role === 'admin' ? 'Admin Workspace' : 'User Workspace'}
               </p>
             </div>
-            <div className="rounded-3xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-blue-50/90">
-              Signed in as <span className="font-semibold">{user?.role}</span>
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              <div className="rounded-3xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-blue-50/90">
+                Signed in as <span className="font-semibold">{user?.role}</span>
+              </div>
             </div>
           </div>
 

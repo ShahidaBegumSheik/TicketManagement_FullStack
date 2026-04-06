@@ -9,6 +9,7 @@ from app.models.comment import Comment
 class UserRole(str, enum.Enum):
     admin = "admin"
     user = "user"
+    support_agent = "support_agent"
 
 class User(Base):
 
@@ -35,6 +36,7 @@ class User(Base):
         back_populates="assigned_user",
     )
     comment: Mapped[list["Comment"]] = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_role", "role"),

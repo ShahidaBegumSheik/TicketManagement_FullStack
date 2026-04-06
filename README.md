@@ -3,7 +3,7 @@
 A full-stack Ticket Management System built with **FastAPI** (backend)
 and **React + Vite + Tailwind CSS** (frontend).\
 Supports role-based access, ticket lifecycle, assignment, comments,
-filtering and statistics
+filtering and statistics. Enhanced with real-time features, optimized APIs, and production-level architecture.
 
 ---
 
@@ -18,6 +18,8 @@ filtering and statistics
 - **Pydantic** – request and response validation
 - **JWT Authentication** – secure login and protected endpoints
 - **Uvicorn** – ASGI server for running FastAPI
+- **WebSocket** - Real time notifications
+- **smtplib** - for sending mails
 
 ### Frontend
 
@@ -26,6 +28,7 @@ filtering and statistics
 - **Tailwind CSS** – utility-first CSS framework for styling
 - **Axios** – HTTP client for backend API calls
 - **React Router DOM** – routing and layout navigation
+- **Chart.js** - to create visual charts
 
 ---
 
@@ -34,10 +37,13 @@ filtering and statistics
 ### User Features
 
 - Register & login
-- Create tickets
+- Create tickets - Only Users can create tickets, Support Agents cannot create tickets
+- Add attachments for the created tickets
 - View own + assigned tickets
 - View ticket details
 - Add comments
+- Reopen a closed ticket as a Support Agent
+- Check if duplicate ticket is already created
 
 ### Admin Features
 
@@ -46,6 +52,7 @@ filtering and statistics
 - Update status & priority
 - View users and their tickets
 - Add comments
+- Change the role of the User to Support Agent and Vice Versa
 
 ## Shared Features
 
@@ -53,6 +60,65 @@ filtering and statistics
 - Ticket details view
 - Comments system
 - Reusable UI components
+
+---
+
+## Advanced Features (Real-Time & Optimization)
+
+### Real-Time Notifications
+
+- FastAPI WebSockets
+- Triggered on ticket events
+- Bell icon with unread count
+
+### Comments System
+
+- User/Admin/Support Agent
+- Chat-style UI with timestamps
+
+### Activity Timeline
+
+- Full audit trail of ticket lifecycle
+
+### File Upload
+
+- Images & PDFs (max 5MB)
+- Linked to tickets
+
+### Dashboard Analytics
+
+- Chart.js graphs
+- CSV export
+
+### Backend Pagination & Filtering
+
+- Server-side filtering & search
+
+### Support Agent Role
+
+- Restricted access role
+
+### Ticket Enhancements
+
+- Auto escalation
+- Reopening with reason
+- Duplicate detection
+
+### Email Notifications
+
+- SMTP-based alerts
+
+### API Optimization
+
+- Indexed queries
+- joinedload optimization
+- rate limiting
+
+### UI/UX Enhancements
+
+- Notifications
+- Loading states
+- Error handling
 
 ---
 
@@ -78,6 +144,14 @@ filtering and statistics
 
 - `GET /api/v1/tickets/my` Get created + assigned tickets
 
+- `GET /api/v1/tickets/duplicate-check` Get duplicate tickets with similar title and/or description
+
+- `POST /api/v1/tickets/{ticket_id}/attachments` - Add attachements for a ticket
+
+- `GET /api/v1/tickets/{ticket_id}/attachments/{attachment_id}` - Get the attachment for a specific ticket
+
+- `POST /api/v1/tickets/{ticket_id}/reopen` - User can reopen a closed ticket giving a reason
+
 ---
 
 ### Admin APIs
@@ -92,6 +166,8 @@ filtering and statistics
 
 - `GET /api/v1/admin/user-tickets` Get user-ticket mapping for admin view.
 
+- `PUT /api/v1/admin/users/{user_id}/role` Update User role to Support Agent or to User
+
 ---
 
 ### Admin Statistics API
@@ -100,6 +176,10 @@ filtering and statistics
 
   Returns summary statistics (total, open, in-progress, closed, cancelled, and pripority-wise distribution)
 
+- `GET /api/v1/admin/dashboard-analytics` Get tickets per day, Status & Priority distributions, Avg resolutions, active users
+
+- `GET /api/v1/admin/export` - Export the admin tickets stats to csv file
+
 ---
 
 ### Comments APIs
@@ -107,6 +187,12 @@ filtering and statistics
 - `GET /api/v1/tickets/{ticket_id}/comments` Get comments
 
 - `POST /api/v1/tickets/{ticket_id}/comments` Add comment
+
+### Notifications APIs
+
+- `GET /api/v1/notifications` Get notifications
+
+- `POST /api/v1/notifications/{notification_id}/read` Mark notification as read
 
 ---
 
@@ -123,9 +209,15 @@ ticket_booking_app/
 │   │   │   ├── auth.py
 │   │   │   ├── user.py
 │   │   │   ├── admin.py
-│   │   │   ├── tickets.py
-│   │   │   ├── comments.py
+│   │   │   ├── ticket.py
+│   │   │   ├── comment.py
+│   │   │   ├── notifications.py
+│   │   │   └── ws.py
+│   │   ├── services/         # Business Logic for tickets
+│   │   │   ├── ticketing.py
+│   │   │   ├── notification_service.py
 │   │   └── main.py
+│   │   ├── uploads/           # Issue screen shot uplaod for ticket creation
 │   └── requirements.txt
 │
 ├── frontend/
@@ -135,14 +227,37 @@ ticket_booking_app/
 │   │   │   ├── TicketFilters.jsx
 │   │   │   ├── TicketTable.jsx
 │   │   │   ├── CommentsPanel.jsx
+│   │   │   ├── NotificationBell.jsx
+│   │   │   ├── ChartCard.jsx
+│   │   │   ├── StatsCard.jsx
+│   │   │   ├── AttachmentList.jsx
+│   │   │   └── ActivityTimeline.jsx
+│   │   │   ├── TicketCard.jsx
+│   │   │   ├── TicketFilters.jsx
+│   │   │   ├── TicketTable.jsx
+│   │   │   ├── LoadingState.jsx
+│   │   │   ├── ProfileForm.jsx
+│   │   │   ├── SectionHeader.jsx
 │   │   ├── contexts/          # auth context
 │   │   ├── layouts/
 │   │   ├── pages/             # dashboards & auth pages
+│   │   │   ├── AdminDashboard.jsx
+│   │   │   ├── UserDashboard.jsx
+│   │   │   ├── NotFoundPage.jsx
+│   │   │   ├── RegisterPage.jsx
+│   │   │   └── LoginPage.jsx
 │   │   ├── router/
+│   │   │   └── routes.jsx
 │   │   └── styles/
-│   └── package.json
+│   │   │   └── index.css
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── package.json
+│   └── vite.config.js
 │
-└── README.md
+├── uploads/ (for file storage)
+├── README.md
+└── .gitignore
 ```
 
 ---
