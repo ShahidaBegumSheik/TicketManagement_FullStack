@@ -63,7 +63,7 @@ filtering and statistics. Enhanced with real-time features, optimized APIs, and 
 
 ---
 
-## Advanced Features (Real-Time & Optimization)
+## Advanced Features (Real-Time & Optimization) - Phase 1
 
 ### Real-Time Notifications
 
@@ -259,6 +259,217 @@ ticket_booking_app/
 ├── README.md
 └── .gitignore
 ```
+
+---
+
+# Backend Enhancements – Phase 2
+
+## Overview
+
+This phase enhances the Ticket Management System with advanced backend capabilities for scalability, performance, and better user experience.
+
+---
+
+# 1. Tags System
+
+## Description
+
+Tickets can now have multiple tags (e.g., Bug, Feature, Urgent).
+
+## Features
+
+- Add multiple tags to a ticket
+- Filter tickets by tags
+- Many-to-many relationship
+
+## Database Design
+
+```
+tags table
+ticket_tags (mapping table)
+```
+
+## APIs
+
+- Add tags during ticket creation/update
+- Filter tickets using query params:
+
+```
+GET /api/v1/tickets?tags=bug,urgent
+```
+
+---
+
+# 2. Saved Filters
+
+## Description
+
+Users can save frequently used filters.
+
+## Features
+
+- Save custom filter views
+- Apply saved filters quickly
+
+## Example
+
+- "My Open Tickets"
+- "High Priority Issues"
+
+## Database
+
+```
+saved_filters table
+```
+
+## APIs
+
+- Save filter:
+
+```
+POST /api/v1/filters
+```
+
+- Get filters:
+
+```
+GET /api/v1/filters
+```
+
+---
+
+# 3. Bulk Actions
+
+## Description
+
+Perform actions on multiple tickets at once.
+
+## Features
+
+- Bulk status update
+- Bulk assignment
+- Bulk delete
+
+## APIs
+
+```
+POST /api/v1/admin/tickets/bulk/status
+POST /api/v1/admin/tickets/bulk/assign
+POST /api/v1/admin/tickets/bulk/delete
+```
+
+## Example Payload
+
+```
+{
+  "ticket_ids": [1,2,3],
+  "status": "closed"
+}
+```
+
+---
+
+# 4. Soft Delete & Restore
+
+## Description
+
+Tickets are not permanently deleted.
+
+## Features
+
+- Soft delete (is_deleted flag)
+- Admin-only deleted view
+- Restore functionality
+
+## APIs
+
+```
+DELETE /api/v1/admin/tickets/{id}
+GET /api/v1/admin/tickets/deleted
+POST /api/v1/admin/tickets/{id}/restore
+```
+
+---
+
+# 5. Advanced Search
+
+## Features
+
+- Full-text search
+- Keyword matching
+- Relevance-based results
+
+---
+
+# 6. Caching (Performance)
+
+## Features
+
+- Redis / in-memory caching
+- Cache ticket list & analytics
+- Cache invalidation on update
+
+---
+
+# 7. Modular Architecture
+
+## Structure
+
+- Routers → API layer
+- Services → Business logic
+- Repositories → DB queries
+
+---
+
+# 8. API Versioning
+
+## Structure
+
+```
+/api/v1/
+```
+
+Supports future upgrades without breaking existing APIs.
+
+---
+
+# 9. Logging & Monitoring
+
+## Features
+
+- Structured logging
+- Tracks:
+  - Requests
+  - Errors
+  - Endpoints
+
+---
+
+# 10. Validation & Standards
+
+## Features
+
+- Pydantic validation
+- Consistent response format:
+
+```
+{
+  "status": "success",
+  "message": "...",
+  "data": {}
+}
+```
+
+---
+
+# Summary of Phase 2 Enhancements
+
+This phase upgrades the system to:
+
+- Scalable architecture
+- Optimized performance
+- Advanced filtering & search
+- Production-ready backend design
 
 ---
 
