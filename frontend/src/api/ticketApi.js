@@ -58,7 +58,7 @@ export async function getNotifications() {
 }
 
 export async function markNotificationsRead() {
-  const { data } = await api.post('/notifications/read-all');
+  const { data } = await api.patch('/notifications/read-all');
   return data;
 }
 
@@ -99,3 +99,49 @@ export async function exportTicketsCsv() {
   const response = await api.get('/admin/export', { responseType: 'blob' });
   return response.data;
 }
+
+export async function bulkUpdateTicketStatus(payload) {
+  const { data } = await api.patch('/admin/tickets/bulk/status', payload);
+  return data;
+}
+
+export async function bulkAssignTickets(payload) {
+  const { data } = await api.patch('/admin/tickets/bulk/assign', payload)
+  return data;
+}
+
+export async function bulkDeleteTickets(payload) {
+  const { data } = await api.patch('/admin/tickets/bulk/delete', payload)
+  return data;
+}
+
+export async function createSavedFilter(payload) {
+  const { data } = await api.post('/filters', payload);
+  return data;
+}
+
+export async function getSavedFilters() {
+  const { data } = await api.get('/filters');
+  return data;
+}
+
+export async function deleteSavedFilter(filter_id) {
+  const { data } = await api.delete(`/filters/${filter_id}`);
+  return data;
+}
+
+export async function deleteTicket(ticketId) {
+  const { data } = await api.delete(`/admin/tickets/${ticketId}`);
+  return data;
+}
+
+export async function getDeletedTickets(params = {}) {
+  const { data } = await api.get('/admin/tickets/deleted', { params });
+  return data;
+}
+
+export async function restoreTicket(ticketId) {
+  const { data } = await api.post(`/admin/tickets/${ticketId}/restore`);
+  return data;
+}
+

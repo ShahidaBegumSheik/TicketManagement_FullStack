@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     rate_limit_login: str = Field(default="5/minute", alias="RATE_LIMIT_LOGIN")
     rate_limit_ticket_create: str = Field(default="10/hour", alias="RATE_LIMIT_TICKET_CREATE")
 
+    redis_url: str | None = Field(default=None, alias="REDIS_URL")
+    cache_ttl_seconds: int = Field(default=60, alias="CACHE_TTL_SECONDS")
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

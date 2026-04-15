@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class RegisterIn(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=50)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
 
@@ -19,7 +19,7 @@ class TokenOut(BaseModel):
 
 class LoginIn(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=6, max_length=128)
 
 
 class UserMeOut(BaseModel):

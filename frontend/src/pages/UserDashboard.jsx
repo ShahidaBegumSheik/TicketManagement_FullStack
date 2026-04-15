@@ -21,6 +21,7 @@ import TicketFilters from '../components/TicketFilters';
 import TicketTable from '../components/TicketTable';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardShell from '../layouts/DashboardShell';
+import TagList from '../components/TagList';  
 
 const defaultFilters = { search: '', status: '', priority: '' };
 
@@ -56,7 +57,7 @@ export default function UserDashboard() {
   const [page, setPage] = useState(1);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
-  const [form, setForm] = useState({ title: '', description: '', priority: 'low', files: [] });
+  const [form, setForm] = useState({ title: '', description: '', priority: 'low', tags: '', files: [] });
   const isSupportAgent = user?.role === 'support_agent';
   const userMenu = isSupportAgent ? agentMenu : standardUserMenu;
 
@@ -98,7 +99,12 @@ export default function UserDashboard() {
 
   function updateField(event) {
     const { name, value, files } = event.target;
-    setForm((prev) => ({ ...prev, [name]: files ? Array.from(files) : value }));
+
+    if (name === 'files') {
+      setForm((prev) => ({ ...prev, files: Array.from(files || []) }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   function updateFilter(key, value) {
@@ -118,11 +124,12 @@ export default function UserDashboard() {
 
   async function handleCreateTicket(event) {
     event.preventDefault();
-    setFormLoading(true);
-    setError('');
-    setMessage('');
-
+    
     try {
+      setFormLoading(true);
+      setError('');
+      setMessage('');
+
       const duplicate = await checkDuplicateTicket({ title: form.title, description: form.description });
       if (duplicate?.is_duplicate) {
         setMessage(`${duplicate.message} You can still submit if it is a different issue.`);
@@ -131,12 +138,22 @@ export default function UserDashboard() {
       formData.append('title', form.title);
       formData.append('description', form.description);
       formData.append('priority', form.priority);
+
+      const tagList = (form.tags || '')
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+
+      tagList.forEach((tag) => {
+        formData.append('tags', tag);
+      });
+
       (form.files || []).forEach((file) => {
         formData.append('files', file)
       });
       const created = await createTicket(formData);
       setMessage('Ticket created successfully.');
-      setForm({ title: '', description: '', priority: 'low' , files: []});
+      setForm({ title: '', description: '', priority: 'low' , tags: '', files: []});
       setDetailsTicket(created);
       loadTickets(1, filters);
     } catch (err) {
@@ -277,6 +294,22 @@ export default function UserDashboard() {
             </select>
           </div>
           <div>
+            <label className="label" htmlFor="tags">Tags</label>
+            <input
+              id="tags"
+              name="tags"
+              type="text"
+              className="input"
+              value={form.tags}
+              onChange={updateField}
+              placeholder="Enter tags separated by commas (e.g. Bug, Urgent)"
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              Add multiple tags separated by commas.
+            </p>
+          </div>
+
+          <div>
             <label className="label" htmlFor="files">Attachments</label>
             <input id="files" name="files" type="file" className="input" multiple accept=".png,.jpg,.jpeg,.pdf" onChange={updateField} />
             <p className="mt-2 text-xs text-slate-500">Images and PDFs only. Maximum 5 MB per file.</p>
@@ -359,6 +392,25 @@ export default function UserDashboard() {
                   <div>
                     <h3 className="text-xl font-semibold text-slate-900">{detailsTicket.title}</h3>
                     <p className="mt-1 text-sm text-slate-600">{detailsTicket.description}</p>
+
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Tags</p>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {detailsTicket.tags?.length ? (
+                          detailsTicket.tags.map((tag) => (
+                            <span
+                              key={tag.id ?? tag.name}
+                              className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700"
+                            >
+                              {tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-400">No tags</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="text-sm text-slate-500">
                     <div>

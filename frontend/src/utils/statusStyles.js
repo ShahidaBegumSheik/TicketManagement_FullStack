@@ -1,29 +1,29 @@
 export function statusBadge(status) {
   switch (status) {
     case 'open':
-      return 'border-sky-200 bg-sky-50 text-sky-700';
+      return 'bg-blue-600 text-white'; // strong blue
     case 'in_progress':
-      return 'border-amber-200 bg-amber-50 text-amber-700';
+      return 'bg-orange-500 text-white'; // strong orange
     case 'closed':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      return 'bg-green-600 text-white'; // strong green
     case 'cancelled':
-      return 'border-rose-200 bg-rose-50 text-rose-700';
+      return 'bg-red-600 text-white'; // strong red
     default:
-      return 'border-slate-200 bg-slate-50 text-slate-700';
+      return 'bg-gray-500 text-white';
   }
 }
 
 export function priorityBadge(priority) {
   switch (priority) {
     case 'urgent':
-      return 'border-rose-200 bg-rose-50 text-rose-700';
+      return 'bg-red-700 text-white'; // dark red
     case 'high':
-      return 'border-orange-200 bg-orange-50 text-orange-700';
+      return 'bg-yellow-500 text-black'; // bright yellow (black text for contrast)
     case 'medium':
-      return 'border-violet-200 bg-violet-50 text-violet-700';
+      return 'bg-pink-500 text-white'; // strong pink
     case 'low':
-      return 'border-slate-200 bg-slate-50 text-slate-700';
+      return 'bg-green-400 text-black'; // light green but readable
     default:
-      return 'border-slate-200 bg-slate-50 text-slate-700';
+      return 'bg-gray-400 text-black';
   }
 }

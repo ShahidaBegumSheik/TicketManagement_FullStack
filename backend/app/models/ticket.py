@@ -23,7 +23,7 @@ class Ticket(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(50), nullable=False)
-    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[Priority] = mapped_column(Enum(Priority), nullable=False)
     status: Mapped[Status] = mapped_column(Enum(Status), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), 
@@ -39,6 +39,14 @@ class Ticket(Base):
     reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reopen_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     assigned_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
@@ -47,6 +55,7 @@ class Ticket(Base):
     comments = relationship("Comment", back_populates="ticket", cascade="all, delete-orphan")
     activities = relationship("TicketActivity", back_populates="ticket", cascade="all, delete-orphan", order_by="TicketActivity.created_at.asc()")
     attachments = relationship("TicketAttachment", back_populates="ticket", cascade="all, delete-orphan", order_by="TicketAttachment.created_at.desc()")
+    tags = relationship("Tag", secondary="ticket_tags", back_populates="tickets")
 
     __table_args__ = (
         Index("ix_user_ticket_priority", "priority", "user_id"),
@@ -55,4 +64,10 @@ class Ticket(Base):
         Index("ix_ticket_created_status", "created_at", "status"),
         Index("ix_ticket_updated_status", "updated_at", "status"),
         Index("ix_ticket_title", "title"),
+        Index(
+            "ix_ticket_fulltext_title_description",
+            "title",
+            "description",
+            mysql_prefix="FULLTEXT",
+        ),
     )

@@ -9,12 +9,12 @@ export default function TicketFilters({
 }) {
   return (
     <div className="card mb-5 p-5">
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px, 1fr)_minmax(180px, 220px)_minmax(180px, 220px)_auto_auto]">
         <div>
           <label className="label" htmlFor="search">Search</label>
           <input
             id="search"
-            className="input"
+            className="input min-w-[180px]"
             placeholder="Search by title or keyword"
             value={filters.search}
             onChange={(event) => onChange('search', event.target.value)}
@@ -25,7 +25,7 @@ export default function TicketFilters({
           <label className="label" htmlFor="statusFilter">Status</label>
           <select
             id="statusFilter"
-            className="input"
+            className="input min-w-[180px]"
             value={filters.status}
             onChange={(event) => onChange('status', event.target.value)}
           >
@@ -41,7 +41,7 @@ export default function TicketFilters({
           <label className="label" htmlFor="priorityFilter">Priority</label>
           <select
             id="priorityFilter"
-            className="input"
+            className="input min-w-[180px]"
             value={filters.priority}
             onChange={(event) => onChange('priority', event.target.value)}
           >
@@ -55,11 +55,11 @@ export default function TicketFilters({
 
         <div className="flex items-end gap-2">
           {showApply ? (
-            <button type="button" className="btn-primary w-full" onClick={onApply}>
+            <button type="button" className="btn-primary whitespace-nowrap" onClick={onApply}>
               {applyLabel}
             </button>
           ) : null}
-          <button type="button" className="btn-secondary w-full" onClick={onReset}>
+          <button type="button" className="btn-secondary whitespace-nowrap" onClick={onReset}>
             {resetLabel}
           </button>
         </div>

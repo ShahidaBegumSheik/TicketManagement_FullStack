@@ -9,9 +9,10 @@ export default function NotificationBell() {
 
   async function loadNotifications() {
     try {
-      const data = await getNotifications();
-      setItems(Array.isArray(data?.items) ? data.items : []);
-      setUnreadCount(data?.unread_count || 0);
+      const response = await getNotifications();
+      const payload = response?.data || {};
+      setItems(Array.isArray(payload?.items) ? payload.items : []);
+      setUnreadCount(payload?.unread_count || 0);
     } catch {
       // ignore widget-only failures
     }

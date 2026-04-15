@@ -68,7 +68,7 @@ textarea {
 
 
   .input {
-    @apply w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100;
+    @apply w-full min-w-0 rounded-2xl border border-slate-300 bg-white pl-3 pr-10 py-3 text-sm text-slate-800 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100;
   }
 
 

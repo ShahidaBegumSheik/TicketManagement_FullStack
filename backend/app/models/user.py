@@ -37,6 +37,7 @@ class User(Base):
     )
     comment: Mapped[list["Comment"]] = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    saved_filters = relationship("SavedFilter", back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_role", "role"),

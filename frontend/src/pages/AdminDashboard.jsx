@@ -4,11 +4,17 @@ import { getAllUsers, toggleUserStatus, updateUserRole } from '../api/authApi';
 import {
   addTicketComment,
   getAllTickets,
+  getDeletedTickets,
+  restoreTicket,
+  deleteTicket,
   getDashboardAnalytics,
   getTicketComments,
   getTicketById,
   updateTicket,
   exportTicketsCsv,
+  bulkUpdateTicketStatus,
+  bulkAssignTickets,
+  bulkDeleteTickets,
 } from '../api/ticketApi';
 import ActivityTimeline from '../components/ActivityTimeline';
 import AttachmentList from '../components/AttachmentList';
@@ -44,6 +50,11 @@ const adminMenu = [
     description: 'Update ticket status, priority, and assignment.',
   },
   {
+    key: 'deleted-tickets',
+    label: 'Deleted Tickets',
+    description: 'View soft-deleted tickets and restore them.',
+  },
+  {
     key: 'view-users',
     label: 'Manage Users',
     description: 'View users and activate or deactivate accounts.',
@@ -60,17 +71,41 @@ function chartData(points, label, type = 'bar') {
   const values = points.map((item) => item.value);
 
   const palette = [
-  '#a5b4fc', // light indigo
-  '#c4b5fd', // light violet
-  '#67e8f9', // light cyan
-  '#6ee7b7', // light emerald
-  '#fde68a', // light amber
-  '#fca5a5', // light red
-  '#f9a8d4', // light pink
-  '#93c5fd', // light blue
-];
+    '#3b82f6', // blue
+    '#ef4444', // red
+    '#22c55e', // green
+    '#eab308', // yellow
+    '#06b6d4', // cyan
+    '#f97316', // orange
+    '#8b5cf6', // purple
+    '#10b981', // emerald
+  ];
 
+  const priorityColors = {
+    urgent: '#ef4444',   // red
+    high: '#eab308',     // yellow
+    medium: '#f472b6',   // pink
+    low: '#86efac',      // light green
+  };
 
+  const statusColors = {
+    open: '#3b82f6',         // blue
+    in_progress: '#f59e0b',  // amber
+    closed: '#22c55e',       // green
+    cancelled: '#ef4444',    // red
+  };
+
+  const normalizedColors = points.map((item, index) => {
+    const key = String(item.label || '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+
+    return (
+      priorityColors[key] ||
+      statusColors[key] ||
+      palette[index % palette.length]
+    );
+  });
 
   if (type === 'line') {
     return {
@@ -79,9 +114,9 @@ function chartData(points, label, type = 'bar') {
         {
           label,
           data: values,
-          borderColor: '#4f46e5',
-          backgroundColor: 'rgba(79, 70, 229, 0.18)',
-          pointBackgroundColor: '#7c3aed',
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.18)',
+          pointBackgroundColor: '#2563eb',
           pointBorderColor: '#ffffff',
           pointRadius: 5,
           pointHoverRadius: 7,
@@ -99,9 +134,10 @@ function chartData(points, label, type = 'bar') {
         {
           label,
           data: values,
-          backgroundColor: palette.slice(0, values.length),
+          backgroundColor: normalizedColors,
           borderColor: '#ffffff',
           borderWidth: 2,
+          hoverOffset: 6,
         },
       ],
     };
@@ -113,15 +149,14 @@ function chartData(points, label, type = 'bar') {
       {
         label,
         data: values,
-        backgroundColor: palette.slice(0, values.length),
-        borderColor: palette.slice(0, values.length),
+        backgroundColor: normalizedColors,
+        borderColor: normalizedColors,
         borderWidth: 1,
         borderRadius: 10,
       },
     ],
   };
 }
-
 
 export default function AdminDashboard() {
   const [activeMenu, setActiveMenu] = useState('dashboard');
@@ -143,7 +178,15 @@ export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [filters, setFilters] = useState(defaultFilters);
   const [page, setPage] = useState(1);
+  const [selectedTicketIds, setSelectedTicketIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState('status');
+  const [bulkStatusValue, setBulkStatusValue] = useState('open');
+  const [bulkAssignedUserId, setBulkAssignedUserId] = useState('');
+  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const { saveProfile, user } = useAuth();
+  const [savedFilters, setSavedFilters] = useState([]);
+  const [savedFilterName, setSaveFilterName] = useState('')
 
   const currentMenu = useMemo(
     () => adminMenu.find((item) => item.key === activeMenu) || adminMenu[0],
@@ -184,6 +227,32 @@ export default function AdminDashboard() {
     }
   }
 
+  async function loadDeletedTickets(currentPage = page) {
+    setLoading(true);
+    setError('');
+
+    try {
+      const data = await getDeletedTickets({
+        page: currentPage,
+        size: 10,
+      });
+
+      const ticketItems = Array.isArray(data?.items) ? data.items : [];
+      setTickets(ticketItems);
+      setMeta({
+        page: data?.page ?? currentPage,
+        total: data?.total ?? 0,
+        total_pages: data?.pages ?? 1,
+        limit: data?.size ?? 10,
+      });
+      setSelectedTicket(null);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Unable to load deleted tickets.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadUsers() {
     try {
       const data = await getAllUsers();
@@ -211,6 +280,15 @@ export default function AdminDashboard() {
       setError(err?.response?.data?.detail || 'Unable to load comments.');
     } finally {
       setLoadingComments(false);
+    }
+  }
+
+  async function loadSavedFilters() {
+    try {
+      const data = await getSavedFilters();
+      setSavedFilters(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Unable to laod saved filters', err);
     }
   }
 
@@ -249,6 +327,36 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleDeleteTicket(ticketId) {
+    const confirmed = window.confirm('Are you sure you want to delete this ticket?');
+    if (!confirmed) return;
+
+    try {
+      setError('');
+      setMessage('');
+      await deleteTicket(ticketId);
+      setMessage('Ticket deleted successfully.');
+      setSelectedTicket(null);
+      await loadTickets(page, filters);
+      await loadAnalytics();
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to delete ticket.');
+    }
+  }
+
+  async function handleRestoreTicket(ticketId) {
+    try {
+      setError('');
+      setMessage('');
+      await restoreTicket(ticketId);
+      setMessage('Ticket restored successfully.');
+      await loadDeletedTickets(page);
+      await loadAnalytics();
+    } catch(err) {
+      setError(err?.response?.data?.detail || 'Failed to restor ticket.');
+    }
+  }
+
   useEffect(() => {
     if (activeMenu === 'dashboard') {
       loadAnalytics();
@@ -256,7 +364,11 @@ export default function AdminDashboard() {
     }
     if (activeMenu === 'view-all' || activeMenu === 'manage-tickets') {
       loadTickets(page, filters);
+      loadSavedFilters();
       loadUsers();
+    }
+    if (activeMenu == 'deleted-tickets') {
+      loadDeletedTickets(page);
     }
     if (activeMenu === 'view-users') {
       loadUsers();
@@ -351,6 +463,199 @@ export default function AdminDashboard() {
     }
   }
 
+  function toggleTicketSelection(ticketId, checked) {
+    setSelectedTicketIds((prev) => {
+      if (checked) {
+        return prev.includes(ticketId) ? prev : [...prev, ticketId];
+      }
+      return prev.filter((id) => id !== ticketId);
+    });
+  }
+
+
+  function toggleAllTicketSelections(checked, pageTickets) {
+    const idsOnPage = pageTickets.map((ticket) => ticket.id);
+    if (checked) {
+      setSelectedTicketIds((prev) => Array.from(new Set([...prev, ...idsOnPage])));
+      return;
+    }
+    setSelectedTicketIds((prev) => prev.filter((id) => !idsOnPage.includes(id)));
+  }
+
+  function clearBulkSelection() {
+    const defaultBulkAction = 'status';
+    setSelectedTicketIds([]);
+    setBulkAssignedUserId('');
+    setBulkStatusValue('open');
+    setBulkConfirmDelete(false);
+    setBulkAction(defaultBulkAction);
+  }
+
+  async function handleBulkSubmit() {
+    if (!selectedTicketIds.length) {
+      setError('Select at least one ticket for a bulk action.');
+      return;
+    }
+
+    try {
+      setBulkSaving(true);
+      setError('');
+      setMessage('');
+
+      let result;
+
+      if (bulkAction === 'status') {
+        result = await bulkUpdateTicketStatus({
+          ticket_ids: selectedTicketIds,
+          status: bulkStatusValue,
+        });
+      } else if (bulkAction === 'assign') {
+        result = await bulkAssignTickets({
+          ticket_ids: selectedTicketIds,
+          assigned_user_id: bulkAssignedUserId ? Number(bulkAssignedUserId) : null,
+        });
+      } else if (bulkAction === 'delete') {
+        result = await bulkDeleteTickets({
+          ticket_ids: selectedTicketIds,
+          confirm: bulkConfirmDelete,
+        });
+      }
+      setMessage(result?.message || 'Bulk action completed successfully.');
+      setSelectedTicketIds([])
+      setBulkConfirmDelete(false)
+    
+      try {
+        await loadTickets(page, filters);
+        await loadAnalytics();
+      } catch (refreshError) {
+        console.error('Refresh failed after bulk action:', refreshError);
+      }
+    } catch(err) {
+      setError(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        'Failed to perform bulk action.'
+      );
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  function renderBulkActions() {
+    return (
+      <div className="card mb-5 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+          <div className="lg:w-48">
+            <label className="label" htmlFor="bulkAction">Bulk action</label>
+            <select
+              id="bulkAction"
+              className="input"
+              value={bulkAction}
+              onChange={(event) => setBulkAction(event.target.value)}
+            >
+              <option value="status">Bulk status update</option>
+              <option value="assign">Bulk assign</option>
+              <option value="delete">Bulk delete</option>
+            </select>
+          </div>
+
+
+          {bulkAction === 'status' ? (
+            <div className="lg:w-48">
+              <label className="label" htmlFor="bulkStatusValue">New status</label>
+              <select
+                id="bulkStatusValue"
+                className="input"
+                value={bulkStatusValue}
+                onChange={(event) => setBulkStatusValue(event.target.value)}
+              >
+                <option value="open">Open</option>
+                <option value="in_progress">In progress</option>
+                <option value="closed">Closed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          ) : null}
+
+
+          {bulkAction === 'assign' ? (
+            <div className="lg:w-72">
+              <label className="label" htmlFor="bulkAssignedUserId">Assign to</label>
+              <select
+                id="bulkAssignedUserId"
+                className="input"
+                value={bulkAssignedUserId}
+                onChange={(event) => setBulkAssignedUserId(event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {assignableUsers.map((entry) => (
+                  <option key={entry.id} value={entry.id}>{entry.name} ({entry.role})</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+
+          {bulkAction === 'delete' ? (
+            <label className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <input
+                type="checkbox"
+                checked={bulkConfirmDelete}
+                onChange={(event) => setBulkConfirmDelete(event.target.checked)}
+              />
+              Confirm bulk delete
+            </label>
+          ) : null}
+
+
+          <div className="flex flex-1 items-center justify-between gap-3">
+            <p className="text-sm text-slate-600">
+              Selected tickets: <span className="font-semibold">{selectedTicketIds.length}</span>
+            </p>
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary" onClick={clearBulkSelection}>
+                Clear selection
+              </button>
+              <button type="button" className="btn-primary" disabled={bulkSaving || !selectedTicketIds.length} onClick={handleBulkSubmit}>
+                {bulkSaving ? 'Applying...' : 'Apply bulk action'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDeletedTickets() {
+    return (
+      <div className="space-y-6">
+        {message ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {message}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </div>
+        ) : null}
+
+        <TicketTable
+          tickets={tickets}
+          loading={loading}
+          emptyText="No deleted tickets found."
+          meta={meta}
+          onPageChange={(next) => setPage(next)}
+          showActions
+          actionLabel="Restore"
+          onAction={handleRestoreTicket}
+          onView={undefined}
+        />
+      </div>
+    );
+  }
+
   function renderDashboard() {
     const summary = analytics?.summary;
     return (
@@ -428,7 +733,114 @@ export default function AdminDashboard() {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div>
           <TicketFilters filters={filters} onChange={updateFilter} onReset={resetFilters} onApply={applyFilters} />
-          <TicketTable tickets={tickets} loading={loading} emptyText="No tickets found." showActions={false} onView={handleSelectTicket} meta={meta} onPageChange={(next) => setPage(next)} />
+          <div className="card mt-4 p-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+              <div>
+                <label className="label" htmlFor="bulkAction">Bulk action</label>
+                <select
+                  id="bulkAction"
+                  value={bulkAction}
+                  onChange={(event) => setBulkAction(event.target.value)}
+                  className="input"
+                >
+                  <option value="status">Bulk status update</option>
+                  <option value="assign">Bulk assign</option>
+                  <option value="delete">Bulk delete</option>
+                </select>
+              </div>
+
+              {bulkAction === 'status' ? (
+                <div>
+                  <label className="label" htmlFor="bulkStatus">New status</label>
+                  <select
+                    id="bulkStatus"
+                    value={bulkStatusValue}
+                    onChange={(event) => setBulkStatusValue(event.target.value)}
+                    className="input"
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In progress</option>
+                    <option value="closed">Closed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              ) : null}
+
+              {bulkAction === 'assign' ? (
+                <div>
+                  <label className="label" htmlFor="bulkAssign">Assign user/support agent</label>
+                  <select
+                    id="bulkAssign"
+                    value={bulkAssignedUserId}
+                    onChange={(event) => setBulkAssignedUserId(event.target.value)}
+                    className="input"
+                  >
+                    <option value="">Unassigned</option>
+                    {assignableUsers.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name} ({entry.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {bulkAction === 'delete' ? (
+                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <input
+                    id="bulkDeleteConfirm"
+                    type="checkbox"
+                    checked={bulkConfirmDelete}
+                    onChange={(event) => setBulkConfirmDelete(event.target.checked)}
+                  />
+                  <label htmlFor="bulkDeleteConfirm" className="text-sm text-rose-700">
+                    I confirm bulk delete
+                  </label>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-600">
+                Selected tickets: <span className="font-semibold text-slate-900">{selectedTicketIds.length}</span>
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setSelectedTicketIds([]);
+                    setBulkConfirmDelete(false);
+                  }}
+                >
+                  Clear selection
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={bulkSaving || selectedTicketIds.length === 0}
+                  onClick={handleBulkSubmit}
+                >
+                  {bulkSaving ? 'Applying...' : 'Apply'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <TicketTable 
+            tickets={tickets}
+            loading={loading}
+            emptyText="No tickets found."
+            showActions={false}
+            onView={handleSelectTicket}
+            meta={meta}
+            onPageChange={(next) => setPage(next)}
+            selectable
+            selectedIds={selectedTicketIds}
+            onToggleSelect={toggleTicketSelection}
+            onToggleSelectAll={toggleAllTicketSelections}/>
         </div>
         <div className="space-y-6">
           <div className="card p-6">
@@ -468,7 +880,23 @@ export default function AdminDashboard() {
                 </div>
                 {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
                 {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-                <button type="submit" className="btn-primary w-full" disabled={saving}>{saving ? 'Updating ticket...' : 'Save changes'}</button>
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="btn-primary w-full"
+                    disabled={saving}
+                  >
+                    {saving ? 'Updating ticket...' : 'Save changes'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-xl bg-rose-600 px-4 py-2 text-white hover:bg-rose-700"
+                    onClick={() => handleDeleteTicket(selectedTicket.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
               </form>
             ) : (
               <p className="mt-4 text-sm text-slate-600">Select a ticket from the list first.</p>
@@ -518,6 +946,7 @@ export default function AdminDashboard() {
     }
 
     if (activeMenu === 'manage-tickets') return renderManageTickets();
+    if (activeMenu === 'deleted-tickets') return renderDeletedTickets();
     if (activeMenu === 'view-users') return renderUserList();
     if (activeMenu === 'profile') return <ProfileForm user={user} onSave={saveProfile} />;
     return null;
