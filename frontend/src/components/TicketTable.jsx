@@ -91,8 +91,8 @@ export default function TicketTable({
               const isSelected = selectedIds.includes(ticket.id);
               return (
                 <tr key={ticket.id}
-                className={`border-b hover:bg-slate-100 ${onView ? 'cursor-pointer' : ''}`}
-                onClick={() => onView? () => onView(ticket) : undefined}
+                  className={`border-b hover:bg-slate-100 ${onView ? 'cursor-pointer' : ''}`}
+                  onClick={onView? () => onView(ticket) : undefined}
                 >
                   {selectable ? (
                     <td className="px-4 py-3">
@@ -102,7 +102,6 @@ export default function TicketTable({
                         onChange={(event) => onToggleSelect?.(ticket.id, event.target.checked)}
                         onClick={(event) => { 
                           event.stopPropagation();
-                          onAction?.(ticket.id, ticket);
                         }}
                       />
                     </td>

@@ -1,5 +1,6 @@
 import logging
 import sys
+from pathlib import Path
 
 def setup_logging() -> logging.Logger:
     logger = logging.getLogger("ticket.app")
@@ -9,12 +10,22 @@ def setup_logging() -> logging.Logger:
     
     logger.setLevel(logging.INFO)
 
-    handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+
+    file_handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
     logger.propagate = False
 
     return logger
